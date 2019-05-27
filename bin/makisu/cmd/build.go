@@ -20,6 +20,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"syscall"
 	"time"
 
 	"github.com/uber/makisu/lib/builder"
@@ -66,14 +67,15 @@ type buildCmd struct {
 	compressionLevel string
 
 	preserveRoot bool
+	chroot       string
 }
 
 func getBuildCmd() *buildCmd {
 	buildCmd := &buildCmd{
 		Command: &cobra.Command{
-			Use:                   "build -t=<image_tag> [flags] <context_path>",
+			Use: "build -t=<image_tag> [flags] <context_path>",
 			DisableFlagsInUseLine: true,
-			Short:                 "Build docker image, optionally push to registries and/or load into docker daemon",
+			Short: "Build docker image, optionally push to registries and/or load into docker daemon",
 		},
 	}
 	buildCmd.Args = func(cmd *cobra.Command, args []string) error {
@@ -87,7 +89,6 @@ func getBuildCmd() *buildCmd {
 			log.Errorf("failed to process flags: %s", err)
 			os.Exit(1)
 		}
-
 		if err := buildCmd.Build(args[0]); err != nil {
 			log.Error(err)
 			os.Exit(1)
@@ -122,6 +123,7 @@ func getBuildCmd() *buildCmd {
 	buildCmd.PersistentFlags().StringVar(&buildCmd.compressionLevel, "compression", "default", "Image compression level, could be 'no', 'speed', 'size', 'default'")
 
 	buildCmd.PersistentFlags().BoolVar(&buildCmd.preserveRoot, "preserve-root", false, "Copy / in the storage dir and copy it back after build.")
+	rootCmd.PersistentFlags().StringVar(&buildCmd.chroot, "chroot", "", "Executes the command in a chrooted environment.")
 
 	buildCmd.MarkFlagRequired("tag")
 	buildCmd.Flags().SortFlags = false
@@ -214,6 +216,12 @@ func (cmd *buildCmd) newBuildPlan(
 func (cmd *buildCmd) Build(contextDir string) error {
 	log.Infof("Starting Makisu build (version=%s)", utils.BuildHash)
 
+	if cmd.chroot != "" {
+		if err := cmd.prepareChroot(contextDir); err != nil {
+			return fmt.Errorf("failed to prepare chroot environment: %s", err)
+		}
+	}
+
 	// Create BuildContext.
 	contextDirAbs, err := filepath.Abs(contextDir)
 	if err != nil {
@@ -296,4 +304,30 @@ func (cmd *buildCmd) Build(contextDir string) error {
 
 	log.Infof("Finished building %s", imageName.ShortName())
 	return nil
+}
+
+func (cmd *buildCmd) prepareChroot(context string) error {
+	if runtime.GOOS != "linux" {
+		return fmt.Errorf("cannot prepare chroot on %s", runtime.GOOS)
+	}
+
+	dest, err := filepath.Abs(cmd.chroot)
+	if err != nil {
+		return fmt.Errorf("failed to convert chroot path to absolute: %s", err)
+	} else if _, err := os.Lstat(dest); err == nil || !os.IsNotExist(err) {
+		return fmt.Errorf("chroot target must not exist: %s", err)
+	}
+
+	certs := filepath.Join(cmd.chroot, pathutils.DefaultInternalDir, "certs")
+	if err := os.MkdirAll(certs, 0644); err != nil {
+		return fmt.Errorf("failed to create chroot cert dir: %s", err)
+	}
+	// TODO: copy all certs into the chroot environment.
+
+	dev := filepath.Join(cmd.chroot, "dev")
+	if err := os.MkdirAll(dev, 0644); err != nil {
+		return fmt.Errorf("failed to create chroot /dev dir: %s", err)
+	}
+	// TODO: Create all nods
+	return syscall.Chroot(dest)
 }
