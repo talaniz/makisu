@@ -60,7 +60,7 @@ func isSimilarHardLink(h *tar.Header, nh *tar.Header) (bool, error) {
 		h.Linkname == nh.Linkname &&
 		h.Uid == nh.Uid &&
 		h.Gid == nh.Gid &&
-		h.FileInfo().Mode() == nh.FileInfo().Mode() {
+		h.FileInfo().Mode().Perm() == nh.FileInfo().Mode().Perm() {
 		return true, nil
 	}
 	return false, nil
@@ -74,7 +74,7 @@ func isSimilarDirectory(h *tar.Header, nh *tar.Header) (bool, error) {
 	if hMtime.Equal(nhMtime) &&
 		h.Uid == nh.Uid &&
 		h.Gid == nh.Gid &&
-		h.FileInfo().Mode() == nh.FileInfo().Mode() {
+		h.FileInfo().Mode().Perm() == nh.FileInfo().Mode().Perm() {
 		return true, nil
 	}
 	return false, nil
@@ -90,7 +90,7 @@ func isSimilarRegularFile(h *tar.Header, nh *tar.Header) (bool, error) {
 		h.Uid == nh.Uid &&
 		h.Gid == nh.Gid &&
 		h.Size == nh.Size &&
-		h.FileInfo().Mode() == nh.FileInfo().Mode() {
+		h.FileInfo().Mode().Perm() == nh.FileInfo().Mode().Perm() {
 		return true, nil
 	}
 	return false, nil
